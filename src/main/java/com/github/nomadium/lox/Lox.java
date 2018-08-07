@@ -24,6 +24,8 @@ public class Lox {
     private static final String USAGE = "Usage: jlox [script]";
     private static final String PROMPT = "> ";
 
+    private static final Expr NIL = new Expr.Literal(null);
+
     public static void main(String[] args) throws IOException {
         if (args.length > 1) {
             System.out.println(USAGE);
@@ -57,13 +59,25 @@ public class Lox {
     static void run(final String source) {
         final Scanner scanner = new Scanner(source);
         final List<Token> tokens = scanner.scanTokens();
+        final Parser parser = new Parser(tokens);
+        final Expr expression = parser.parse().orElse(NIL);
 
-        // For now, just print the tokens.
-        tokens.stream().forEach(System.out::println);
+        // Stop if there was a syntax error.
+        if (hadError) { return; }
+
+        System.out.println(new AstPrinter().print(expression));
     }
 
     static void error(final int line, final String message) {
         report(line, StringUtils.EMPTY, message);
+    }
+
+    static void error(final Token token, final String message) {
+        if (token.getType() == TokenType.EOF) {
+            report(token.getLine(), " at end", message);
+        } else {
+            report(token.getLine(), " at '" + token.getLexeme() + "'", message);
+        }
     }
 
     private static void report(final int line, final String where, final String message) {
