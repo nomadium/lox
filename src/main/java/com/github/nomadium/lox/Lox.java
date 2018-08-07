@@ -12,11 +12,14 @@ import java.util.List;
 
 // put a javadoc for the class
 public class Lox {
+    private static final Interpreter interpreter = new Interpreter();
     private static boolean hadError = false;
+    private static boolean hadRuntimeError = false;
 
     // https://www.freebsd.org/cgi/man.cgi?query=sysexits&apropos=0&sektion=0&manpath=FreeBSD+4.3-RELEASE&format=html
     private static final int EX_USAGE = 64;
     private static final int EX_DATAERR = 65;
+    private static final int EX_SOFTWARE = 70;
 
     private static final String DEFAULT_CHARSET_NAME = "UTF-8";
     private static final Charset DEFAULT_CHARSET = Charset.forName(DEFAULT_CHARSET_NAME);
@@ -43,6 +46,7 @@ public class Lox {
 
         // Indicate an error in the exit code.
         if (hadError) { System.exit(EX_DATAERR); }
+        if (hadRuntimeError) { System.exit(EX_SOFTWARE); }
     }
 
     private static void runPrompt() throws IOException {
@@ -65,7 +69,7 @@ public class Lox {
         // Stop if there was a syntax error.
         if (hadError) { return; }
 
-        System.out.println(new AstPrinter().print(expression));
+        interpreter.interpret(expression);
     }
 
     static void error(final int line, final String message) {
@@ -78,6 +82,11 @@ public class Lox {
         } else {
             report(token.getLine(), " at '" + token.getLexeme() + "'", message);
         }
+    }
+
+    static void runtimeError(final RuntimeError error) {
+        System.err.println(error.getMessage() + "\n[line " + error.getToken().getLine() + "]");
+        hadRuntimeError = true;
     }
 
     private static void report(final int line, final String where, final String message) {
