@@ -1,15 +1,23 @@
 package com.github.nomadium.lox;
 
-class Interpreter implements Expr.Visitor<Object> {
+import java.util.List;
+
+class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
     private static final String OPERAND_MUST_BE_A_NUMBER = "Operand must be a number.";
     private static final String OPERANDS_MUST_BE_NUMBERS = "Operands must be numbers.";
     private static final String OPERANDS_MUST_BE_NUMBERS_OR_STRINGS
         = "Operands must be two numbers or two strings.";
 
-    void interpret(Expr expression) {
+    private Environment environment = new Environment();
+    private boolean repl = false;
+
+    void interpret(final List<Stmt> statements, final boolean repl) {
+        this.repl = repl;
+
         try {
-            final Object value = evaluate(expression);
-            System.out.println(stringify(value));
+            for (final Stmt statement : statements) {
+                execute(statement);
+            }
         } catch (final RuntimeError error) {
             Lox.runtimeError(error);
         }
@@ -83,6 +91,11 @@ class Interpreter implements Expr.Visitor<Object> {
         }
     }
 
+    @Override
+    public Object visitVariableExpr(final Expr.Variable expr) {
+        return environment.get(expr.name);
+    }
+
     private void checkNumberOperand(final Token operator, final Object operand) {
         if (operand instanceof Double) { return; }
         throw new RuntimeError(operator, OPERAND_MUST_BE_A_NUMBER);
@@ -123,5 +136,61 @@ class Interpreter implements Expr.Visitor<Object> {
 
     private Object evaluate(final Expr expr) {
         return expr.accept(this);
+    }
+
+    private void execute(final Stmt stmt) {
+        stmt.accept(this);
+    }
+
+    private void executeBlock(final List<Stmt> statements, final Environment environment) {
+        final Environment previous = this.environment;
+        try {
+            this.environment = environment;
+
+            for (final Stmt statement : statements) {
+                execute(statement);
+            }
+        } finally {
+            this.environment = previous;
+        }
+    }
+
+    @Override
+    public Void visitBlockStmt(final Stmt.Block stmt) {
+        executeBlock(stmt.statements, new Environment(environment));
+        return null;
+    }
+
+    @Override
+    public Void visitExpressionStmt(final Stmt.Expression stmt) {
+        final Object value = evaluate(stmt.expression);
+        if (this.repl) { System.out.println("=> " + stringify(value)); }
+        return null;
+    }
+
+    @Override
+    public Void visitPrintStmt(final Stmt.Print stmt) {
+        final Object value = evaluate(stmt.expression);
+        System.out.println(stringify(value));
+        return null;
+    }
+
+    @Override
+    public Void visitVarStmt(final Stmt.Var stmt) {
+        Object value = null;
+
+        if (stmt.initializer != null) {
+            value = evaluate(stmt.initializer);
+        }
+
+        environment.define(stmt.name.getLexeme(), value);
+        return null;
+    }
+
+    @Override
+    public Object visitAssignExpr(final Expr.Assign expr) {
+        final Object value = evaluate(expr.value);
+        environment.assign(expr.name, value);
+        return value;
     }
 }

@@ -2,25 +2,67 @@ package com.github.nomadium.lox;
 
 import static com.github.nomadium.lox.TokenType.*;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Optional;
 
 /*
- * Lox expressions grammar:
+ * Lox language grammar:
  *
- * expression     -> equality ;
+ * program     -> declaration* EOF ;
+ *
+ * declaration -> varDecl | statement ;
+ *
+ * varDecl     -> "var" IDENTIFIER ( "=" expression )? ";" ;
+ *
+ * statement   -> exprStmt | printStmt | block ;
+ *
+ * exprStmt    -> expression ";" ;
+ *
+ * printStmt   -> "print" expression ";" ;
+ *
+ * block       -> "{" declaration* "}" ;
+ *
+ *
+ * Lox expression grammar:
+ *
+ * expression     -> assignment ;
+ *
+ * assignment     -> identifier "=" assignment | equality ;
+ *
  * equality       -> comparison ( ( "!=" | "==" ) comparison )* ;
+ *
  * comparison     -> addition ( ( ">"  | ">=" | "<" | "<=" ) addition )* ;
+ *
  * addition       -> multiplication ( ( "-"  | "+" ) multiplication )* ;
+ *
  * multiplication -> unary ( ( "/" | "*" ) unary )* ;
+ *
  * unary          -> ( "!" | "-" ) unary | primary ;
- * primary        -> NUMBER | STRING | "false" | "true" | "nil" | "(" expression ")" ;
+ *
+ * primary        -> "true" | "false" | "nil" | "this"
+ *                   | NUMBER | STRING
+ *                   | "(" expression ")"
+ *                   | IDENTIFIER ;
  *
  */
 class Parser {
-    private static final String EXPECT_RIGHT_PAREN = "Expect ')' after expression.";
     private static final String EXPECT_EXPRESSION = "Expect expression.";
+
+    private static final String EXPECT_RIGHT_BRACE_AFTER_BLOCK = "Expect '}' after block.";
+
+    private static final String EXPECT_RIGHT_PAREN = "Expect ')' after expression.";
+
+    private static final String EXPECT_SEMICOLON_AFTER_EXPRESSION = "Expect ';' after expression.";
+
+    private static final String EXPECT_SEMICOLON_AFTER_VALUE = "Expect ';' after value.";
+
+    private static final String EXPECT_SEMICOLON_AFTER_VAR_DECLARATION
+        = "Expect ';' after variable declaration.";
+
+    private static final String EXPECT_VARIABLE_NAME = "Expect variable name.";
+
+    private static final String INVALID_ASSIGNMENT_TARGET = "Invalid assignment target.";
 
     private static final class ParseError extends RuntimeException {}
 
@@ -31,16 +73,87 @@ class Parser {
         this.tokens = tokens;
     }
 
-    Optional<Expr> parse() {
-        try {
-            return Optional.of(expression());
-        } catch (ParseError error) {
-            return Optional.empty();
+    List<Stmt> parse() {
+        final List<Stmt> statements = new ArrayList<>();
+
+        while (!isAtEnd()) {
+            statements.add(declaration());
         }
+
+        return statements;
     }
 
     private Expr expression() {
-        return equality();
+        return assignment();
+    }
+
+    private Stmt declaration() {
+        try {
+            if (match(VAR)) { return varDeclaration(); }
+            return statement();
+        } catch (final ParseError error) {
+            synchronize();
+            return null;
+        }
+    }
+
+    private Stmt statement() {
+        if (match(PRINT))      { return printStatement(); }
+        if (match(LEFT_BRACE)) { return new Stmt.Block(block()); }
+        return expressionStatement();
+    }
+
+    private Stmt printStatement() {
+        final Expr value = expression();
+        consume(SEMICOLON, EXPECT_SEMICOLON_AFTER_VALUE);
+        return new Stmt.Print(value);
+    }
+
+    private Stmt varDeclaration() {
+        final Token name = consume(IDENTIFIER, EXPECT_VARIABLE_NAME);
+
+        Expr initializer = null;
+        if (match(EQUAL)) {
+            initializer = expression();
+        }
+
+        consume(SEMICOLON, EXPECT_SEMICOLON_AFTER_VAR_DECLARATION);
+        return new Stmt.Var(name, initializer);
+    }
+
+    private Stmt expressionStatement() {
+        final Expr expr = expression();
+        consume(SEMICOLON, EXPECT_SEMICOLON_AFTER_EXPRESSION);
+        return new Stmt.Expression(expr);
+    }
+
+    private List<Stmt> block() {
+        final List<Stmt> statements = new ArrayList<>();
+
+        while (!check(RIGHT_BRACE) && !isAtEnd()) {
+            statements.add(declaration());
+        }
+
+        consume(RIGHT_BRACE, EXPECT_RIGHT_BRACE_AFTER_BLOCK);
+        return statements;
+    }
+
+    private Expr assignment() {
+        final Expr expr = equality();
+
+        if (match(EQUAL)) {
+            final Token equals = previous();
+            final Expr value = assignment();
+
+            if (expr instanceof Expr.Variable) {
+                final Token name = ((Expr.Variable)expr).name;
+                return new Expr.Assign(name, value);
+            }
+
+            error(equals, INVALID_ASSIGNMENT_TARGET);
+        }
+
+        return expr;
     }
 
     private Expr equality() {
@@ -108,6 +221,10 @@ class Parser {
 
         if (match(NUMBER, STRING)) {
             return new Expr.Literal(previous().getLiteral());
+        }
+
+        if (match(IDENTIFIER)) {
+            return new Expr.Variable(previous());
         }
 
         if (match(LEFT_PAREN)) {

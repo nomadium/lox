@@ -8,7 +8,28 @@ import java.util.List;
 
 public class GenerateAst {
     private static final String DEFAULT_ENCODING = "UTF-8";
+
     private static final String USAGE = "Usage: generate_ast <output directory>";
+
+    private static final String EXPR_CLASS_NAME = "Expr";
+
+    private static final String STMT_CLASS_NAME = "Stmt";
+
+    private static final List<String> EXPR_TYPES_LIST = Arrays.asList(
+        "Assign   : Token name, Expr value",
+        "Binary   : Expr left, Token operator, Expr right",
+        "Grouping : Expr expression",
+        "Literal  : Object value",
+        "Unary    : Token operator, Expr right",
+        "Variable : Token name"
+    );
+
+    private static final List<String> STMT_TYPES_LIST = Arrays.asList(
+        "Block      : List<Stmt> statements",
+        "Expression : Expr expression",
+        "Print      : Expr expression",
+        "Var        : Token name, Expr initializer"
+    );
 
     public static void main(String[] args) throws IOException {
         if (args.length > 1) {
@@ -18,12 +39,9 @@ public class GenerateAst {
 
         final String outputDir = args[0];
 
-        defineAst(outputDir, "Expr", Arrays.asList(
-            "Binary   : Expr left, Token operator, Expr right",
-            "Grouping : Expr expression",
-            "Literal  : Object value",
-            "Unary    : Token operator, Expr right"
-        ));
+        defineAst(outputDir, EXPR_CLASS_NAME, EXPR_TYPES_LIST);
+
+        defineAst(outputDir, STMT_CLASS_NAME, STMT_TYPES_LIST);
     }
 
     private static void defineAst(final String outputDir,
