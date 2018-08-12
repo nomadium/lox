@@ -21,6 +21,11 @@ class AstPrinter implements Expr.Visitor<String>, Stmt.Visitor<String> {
     }
 
     @Override
+    public String visitCallExpr(final Expr.Call expr) {
+        return parenthesize2("call", expr.callee, expr.arguments);
+    }
+
+    @Override
     public String visitGroupingExpr(final Expr.Grouping expr) {
         return parenthesize(GROUP, expr.expression);
     }
@@ -72,6 +77,23 @@ class AstPrinter implements Expr.Visitor<String>, Stmt.Visitor<String> {
     }
 
     @Override
+    public String visitFunctionStmt(final Stmt.Function stmt) {
+        final StringBuilder builder = new StringBuilder();
+        builder.append("(fun " + stmt.name.getLexeme() + "(");
+
+        stmt.parameters.stream().forEach(param -> {
+            if (param != stmt.parameters.get(0)) { builder.append(" "); }
+            builder.append(param.getLexeme());
+        });
+        builder.append(") ");
+
+        stmt.body.stream().forEach(body -> builder.append(body.accept(this)));
+
+        builder.append(")");
+        return builder.toString();
+    }
+
+    @Override
     public String visitIfStmt(final Stmt.If stmt) {
         if (stmt.elseBranch == null) {
             return parenthesize2("if", stmt.condition, stmt.thenBranch);
@@ -82,6 +104,12 @@ class AstPrinter implements Expr.Visitor<String>, Stmt.Visitor<String> {
     @Override
     public String visitPrintStmt(final Stmt.Print stmt) {
         return parenthesize("print", stmt.expression);
+    }
+
+    @Override
+    public String visitReturnStmt(final Stmt.Return stmt) {
+        if (stmt.value == null) { return "(return)"; }
+        return parenthesize("return", stmt.value);
     }
 
     @Override

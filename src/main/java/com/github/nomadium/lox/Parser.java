@@ -11,7 +11,13 @@ import java.util.List;
  *
  * program     -> declaration* EOF ;
  *
- * declaration -> varDecl | statement ;
+ * declaration -> funDecl
+ *                | varDecl
+ *                | statement ;
+ *
+ * funDecl     -> "func" function;
+ * function    -> IDENTIFIER "(" parameters? ")" block ;
+ * parameters  -> IDENTIFIER ( "," IDENTIFIER )* ;
  *
  * varDecl     -> "var" IDENTIFIER ( "=" expression )? ";" ;
  *
@@ -19,6 +25,7 @@ import java.util.List;
  *                | forStmt
  *                | ifStmt
  *                | printStmt
+ *                | returnStmt
  *                | whileStmt
  *                | block ;
  *
@@ -31,6 +38,8 @@ import java.util.List;
  * ifStmt      -> "if" "(" expression ")" statement ( "else" statement )? ;
  *
  * printStmt   -> "print" expression ";" ;
+ *
+ * printStmt   -> "return" expression? ";" ;
  *
  * block       -> "{" declaration* "}" ;
  *
@@ -53,7 +62,11 @@ import java.util.List;
  *
  * multiplication -> unary ( ( "/" | "*" ) unary )* ;
  *
- * unary          -> ( "!" | "-" ) unary | primary ;
+ * unary          -> ( "!" | "-" ) unary | call ;
+ *
+ * call           -> primary ( "(" arguments? ")" )* ;
+ *
+ * arguments      -> expression ( "," expression )* ;
  *
  * primary        -> "true" | "false" | "nil" | "this"
  *                   | NUMBER | STRING
@@ -62,9 +75,18 @@ import java.util.List;
  *
  */
 class Parser {
+    private static final int MAX_ARGS_SIZE = 8;
+    private static final String CANNOT_HAVE_MORE_THAN_MAX_ARGS_SIZE_ARGUMENTS
+        = "Cannot have more than " + MAX_ARGS_SIZE + " arguments.";
+
+    private static final String CANNOT_HAVE_MORE_THAN_MAX_ARGS_SIZE_PARAMETERS
+        = "Cannot have more than " + MAX_ARGS_SIZE + " parameters.";
+
     private static final String EXPECT_EXPRESSION = "Expect expression.";
 
     private static final String EXPECT_LEFT_PAREN_AFTER_FOR = "Expect '(' after 'for'.";
+
+    private static final String EXPECT_PARAMETER_NAME = "Expect parameter name.";
 
     private static final String EXPECT_RIGHT_PAREN_AFTER_FOR_CLAUSES
         = "Expect ')' after for clauses.";
@@ -76,7 +98,10 @@ class Parser {
     private static final String EXPECT_RIGHT_PAREN_AFTER_IF_CONDITION
         = "Expect ')' after if condition.";
 
+    private static final String EXPECT_RIGHT_PAREN_AFTER_ARGUMENTS = "Expect ')' after arguments.";
     private static final String EXPECT_RIGHT_PAREN_AFTER_CONDITION = "Expect ')' after condition.";
+    private static final String EXPECT_RIGHT_PAREN_AFTER_PARAMETERS
+        = "Expect ')' after parameters.";
 
     private static final String EXPECT_RIGHT_BRACE_AFTER_BLOCK = "Expect '}' after block.";
 
@@ -86,6 +111,9 @@ class Parser {
 
     private static final String EXPECT_SEMICOLON_AFTER_LOOP_CONDITION
         = "Expect ';' after loop condition.";
+
+    private static final String EXPECT_SEMICOLON_AFTER_RETURN_VALUE
+        = "Expect ';' after return value.";
 
     private static final String EXPECT_SEMICOLON_AFTER_VALUE = "Expect ';' after value.";
 
@@ -121,6 +149,7 @@ class Parser {
 
     private Stmt declaration() {
         try {
+            if (match(FUN)) { return function("function"); }
             if (match(VAR)) { return varDeclaration(); }
             return statement();
         } catch (final ParseError error) {
@@ -133,6 +162,7 @@ class Parser {
         if (match(FOR))        { return forStatement(); }
         if (match(IF))         { return ifStatement(); }
         if (match(PRINT))      { return printStatement(); }
+        if (match(RETURN))     { return returnStatement(); }
         if (match(WHILE))      { return whileStatement(); }
         if (match(LEFT_BRACE)) { return new Stmt.Block(block()); }
         return expressionStatement();
@@ -198,6 +228,18 @@ class Parser {
         return new Stmt.Print(value);
     }
 
+    private Stmt returnStatement() {
+        final Token keyword = previous();
+
+        Expr value = null;
+        if (!check(SEMICOLON)) {
+            value = expression();
+        }
+
+        consume(SEMICOLON, EXPECT_SEMICOLON_AFTER_RETURN_VALUE);
+        return new Stmt.Return(keyword, value);
+    }
+
     private Stmt varDeclaration() {
         final Token name = consume(IDENTIFIER, EXPECT_VARIABLE_NAME);
 
@@ -222,6 +264,27 @@ class Parser {
         final Expr expr = expression();
         consume(SEMICOLON, EXPECT_SEMICOLON_AFTER_EXPRESSION);
         return new Stmt.Expression(expr);
+    }
+
+    private Stmt.Function function(final String kind) {
+        final Token name = consume(IDENTIFIER, "Expect " + kind + " name.");
+
+        consume(LEFT_PAREN, "Expect '(' after " + kind + " name.");
+        final List<Token> parameters = new ArrayList<>();
+        if (!check(RIGHT_PAREN)) {
+            do {
+                if (parameters.size() >= MAX_ARGS_SIZE) {
+                    error(peek(), CANNOT_HAVE_MORE_THAN_MAX_ARGS_SIZE_PARAMETERS);
+                }
+
+                parameters.add(consume(IDENTIFIER, EXPECT_PARAMETER_NAME));
+            } while (match(COMMA));
+        }
+        consume(RIGHT_PAREN, EXPECT_RIGHT_PAREN_AFTER_PARAMETERS);
+
+        consume(LEFT_BRACE, "Expect '{' before " + kind + " body.");
+        final List<Stmt> body = block();
+        return new Stmt.Function(name, parameters, body);
     }
 
     private List<Stmt> block() {
@@ -328,7 +391,38 @@ class Parser {
             return new Expr.Unary(operator, right);
         }
 
-        return primary();
+        return call();
+    }
+
+    private Expr call() {
+        Expr expr = primary();
+
+        while (true) {
+            if (match(LEFT_PAREN)) {
+                expr = finishCall(expr);
+            } else {
+                break;
+            }
+        }
+
+        return expr;
+    }
+
+    private Expr finishCall(final Expr callee) {
+        final List<Expr> arguments = new ArrayList<>();
+
+        if (!check(RIGHT_PAREN)) {
+            do {
+                if (arguments.size() >= MAX_ARGS_SIZE) {
+                    error(peek(), CANNOT_HAVE_MORE_THAN_MAX_ARGS_SIZE_ARGUMENTS);
+                }
+                arguments.add(expression());
+            } while (match(COMMA));
+        }
+
+        final Token paren = consume(RIGHT_PAREN, EXPECT_RIGHT_PAREN_AFTER_ARGUMENTS);
+
+        return new Expr.Call(callee, paren, arguments);
     }
 
     private Expr primary() {
