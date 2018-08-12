@@ -78,6 +78,19 @@ class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
     }
 
     @Override
+    public Object visitLogicalExpr(final Expr.Logical expr) {
+        final Object left = evaluate(expr.left);
+
+        if (expr.operator.getType() == TokenType.OR) {
+            if (isTruthy(left)) { return left; }
+        } else {
+            if (!isTruthy(left)) { return left; }
+        }
+
+        return evaluate(expr.right);
+    }
+
+    @Override
     public Object visitUnaryExpr(final Expr.Unary expr) {
         final Object right = evaluate(expr.right);
         switch (expr.operator.getType()) {
@@ -169,6 +182,16 @@ class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
     }
 
     @Override
+    public Void visitIfStmt(final Stmt.If stmt) {
+        if (isTruthy(evaluate(stmt.condition))) {
+            execute(stmt.thenBranch);
+        } else if (stmt.elseBranch != null) {
+            execute(stmt.elseBranch);
+        }
+        return null;
+    }
+
+    @Override
     public Void visitPrintStmt(final Stmt.Print stmt) {
         final Object value = evaluate(stmt.expression);
         System.out.println(stringify(value));
@@ -184,6 +207,14 @@ class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
         }
 
         environment.define(stmt.name.getLexeme(), value);
+        return null;
+    }
+
+    @Override
+    public Void visitWhileStmt(final Stmt.While stmt) {
+        while (isTruthy(evaluate(stmt.condition))) {
+            execute(stmt.body);
+        }
         return null;
     }
 

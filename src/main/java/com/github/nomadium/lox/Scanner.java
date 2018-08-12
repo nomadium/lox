@@ -41,7 +41,7 @@ class Scanner {
     private int start = 0;
     private int line = 1;
 
-    Scanner(String source) {
+    Scanner(final String source) {
         this.source = source;
     }
 

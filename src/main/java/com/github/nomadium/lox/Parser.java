@@ -15,9 +15,20 @@ import java.util.List;
  *
  * varDecl     -> "var" IDENTIFIER ( "=" expression )? ";" ;
  *
- * statement   -> exprStmt | printStmt | block ;
+ * statement   -> exprStmt
+ *                | forStmt
+ *                | ifStmt
+ *                | printStmt
+ *                | whileStmt
+ *                | block ;
  *
  * exprStmt    -> expression ";" ;
+ *
+ * forStmt      -> "for" "(" ( varDecl | exprStmt | ";" )
+ *                           expression? ";"
+ *                           expression? ")" statement ;
+ *
+ * ifStmt      -> "if" "(" expression ")" statement ( "else" statement )? ;
  *
  * printStmt   -> "print" expression ";" ;
  *
@@ -28,7 +39,11 @@ import java.util.List;
  *
  * expression     -> assignment ;
  *
- * assignment     -> identifier "=" assignment | equality ;
+ * assignment     -> identifier "=" assignment | logic_or ;
+ *
+ * logic_or       -> logic_and ( "or" logic_and)* ;
+ *
+ * logic_and      -> equality ( "and" equality)* ;
  *
  * equality       -> comparison ( ( "!=" | "==" ) comparison )* ;
  *
@@ -49,11 +64,28 @@ import java.util.List;
 class Parser {
     private static final String EXPECT_EXPRESSION = "Expect expression.";
 
+    private static final String EXPECT_LEFT_PAREN_AFTER_FOR = "Expect '(' after 'for'.";
+
+    private static final String EXPECT_RIGHT_PAREN_AFTER_FOR_CLAUSES
+        = "Expect ')' after for clauses.";
+
+    private static final String EXPECT_LEFT_PAREN_AFTER_IF = "Expect '(' after 'if'.";
+
+    private static final String EXPECT_LEFT_PAREN_AFTER_WHILE = "Expect '(' after 'while'.";
+
+    private static final String EXPECT_RIGHT_PAREN_AFTER_IF_CONDITION
+        = "Expect ')' after if condition.";
+
+    private static final String EXPECT_RIGHT_PAREN_AFTER_CONDITION = "Expect ')' after condition.";
+
     private static final String EXPECT_RIGHT_BRACE_AFTER_BLOCK = "Expect '}' after block.";
 
     private static final String EXPECT_RIGHT_PAREN = "Expect ')' after expression.";
 
     private static final String EXPECT_SEMICOLON_AFTER_EXPRESSION = "Expect ';' after expression.";
+
+    private static final String EXPECT_SEMICOLON_AFTER_LOOP_CONDITION
+        = "Expect ';' after loop condition.";
 
     private static final String EXPECT_SEMICOLON_AFTER_VALUE = "Expect ';' after value.";
 
@@ -98,9 +130,66 @@ class Parser {
     }
 
     private Stmt statement() {
+        if (match(FOR))        { return forStatement(); }
+        if (match(IF))         { return ifStatement(); }
         if (match(PRINT))      { return printStatement(); }
+        if (match(WHILE))      { return whileStatement(); }
         if (match(LEFT_BRACE)) { return new Stmt.Block(block()); }
         return expressionStatement();
+    }
+
+    private Stmt forStatement() {
+        consume(LEFT_PAREN, EXPECT_LEFT_PAREN_AFTER_FOR);
+
+        final Stmt initializer;
+        if (match(SEMICOLON)) {
+            initializer = null;
+        } else if (match(VAR)) {
+            initializer = varDeclaration();
+        } else {
+            initializer = expressionStatement();
+        }
+
+        Expr condition = null;
+        if (!check(SEMICOLON)) {
+            condition = expression();
+        }
+        consume(SEMICOLON, EXPECT_SEMICOLON_AFTER_LOOP_CONDITION);
+
+        Expr increment = null;
+        if (!check(RIGHT_PAREN)) {
+            increment = expression();
+        }
+        consume(RIGHT_PAREN, EXPECT_RIGHT_PAREN_AFTER_FOR_CLAUSES);
+
+        Stmt body = statement();
+        if (increment != null) {
+            body = new Stmt.Block(Arrays.asList(body,
+                                                new Stmt.Expression(increment)));
+        }
+
+        if (condition == null) { condition = new Expr.Literal(true); }
+        body = new Stmt.While(condition, body);
+
+        if (initializer != null) {
+            body = new Stmt.Block(Arrays.asList(initializer, body));
+        }
+
+        return body;
+    }
+
+    private Stmt ifStatement() {
+        consume(LEFT_PAREN, EXPECT_LEFT_PAREN_AFTER_IF);
+        final Expr condition = expression();
+        consume(RIGHT_PAREN, EXPECT_RIGHT_PAREN_AFTER_IF_CONDITION);
+
+        final Stmt thenBranch = statement();
+        Stmt elseBranch = null;
+        if (match(ELSE)) {
+            elseBranch = statement();
+        }
+
+        return new Stmt.If(condition, thenBranch, elseBranch);
     }
 
     private Stmt printStatement() {
@@ -121,6 +210,14 @@ class Parser {
         return new Stmt.Var(name, initializer);
     }
 
+    private Stmt whileStatement() {
+        consume(LEFT_PAREN, EXPECT_LEFT_PAREN_AFTER_WHILE);
+        final Expr condition = expression();
+        consume(RIGHT_PAREN, EXPECT_RIGHT_PAREN_AFTER_CONDITION);
+        final Stmt body = statement();
+        return new Stmt.While(condition, body);
+    }
+
     private Stmt expressionStatement() {
         final Expr expr = expression();
         consume(SEMICOLON, EXPECT_SEMICOLON_AFTER_EXPRESSION);
@@ -139,7 +236,7 @@ class Parser {
     }
 
     private Expr assignment() {
-        final Expr expr = equality();
+        final Expr expr = or();
 
         if (match(EQUAL)) {
             final Token equals = previous();
@@ -153,6 +250,26 @@ class Parser {
             error(equals, INVALID_ASSIGNMENT_TARGET);
         }
 
+        return expr;
+    }
+
+    private Expr or() {
+        Expr expr = and();
+        while (match(OR)) {
+            final Token operator = previous();
+            final Expr right = and();
+            expr = new Expr.Logical(expr, operator, right);
+        }
+        return expr;
+    }
+
+    private Expr and() {
+        Expr expr = equality();
+        while (match(AND)) {
+            final Token operator = previous();
+            final Expr right = equality();
+            expr = new Expr.Logical(expr, operator, right);
+        }
         return expr;
     }
 
