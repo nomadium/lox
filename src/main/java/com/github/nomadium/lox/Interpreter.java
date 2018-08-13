@@ -8,6 +8,9 @@ import java.util.Map;
 class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
     private static final String CANNOT_CALL_A_NON_CALLABLE = "Can only call functions and classes.";
 
+    private static final String ONLY_INSTANCES_HAVE_FIELDS = "Only instances have fields.";
+    private static final String ONLY_INSTANCES_HAVE_PROPERTIES = "Only instances have properties.";
+
     private static final String OPERAND_MUST_BE_A_NUMBER = "Operand must be a number.";
     private static final String OPERANDS_MUST_BE_NUMBERS = "Operands must be numbers.";
     private static final String OPERANDS_MUST_BE_NUMBERS_OR_STRINGS
@@ -121,6 +124,16 @@ class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
     }
 
     @Override
+    public Object visitGetExpr(final Expr.Get expr) {
+        final Object object = evaluate(expr.object);
+        if (object instanceof LoxInstance) {
+            return ((LoxInstance)object).get(expr.name);
+        }
+
+        throw new RuntimeError(expr.name, ONLY_INSTANCES_HAVE_PROPERTIES);
+    }
+
+    @Override
     public Object visitGroupingExpr(final Expr.Grouping expr) {
         return evaluate(expr.expression);
     }
@@ -141,6 +154,24 @@ class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
         }
 
         return evaluate(expr.right);
+    }
+
+    @Override
+    public Object visitSetExpr(final Expr.Set expr) {
+        final Object object = evaluate(expr.object);
+
+        if (!(object instanceof LoxInstance)) {
+            throw new RuntimeError(expr.name, ONLY_INSTANCES_HAVE_FIELDS);
+        }
+
+        final Object value = evaluate(expr.value);
+        ((LoxInstance)object).set(expr.name, value);
+        return value;
+    }
+
+    @Override
+    public Object visitThisExpr(final Expr.This expr) {
+        return lookUpVariable(expr.keyword, expr);
     }
 
     @Override
@@ -241,6 +272,23 @@ class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
     }
 
     @Override
+    public Void visitClassStmt(final Stmt.Class stmt) {
+        environment.define(stmt.name.getLexeme(), null);
+
+        final Map<String, LoxFunction> methods = new HashMap<>();
+        stmt.methods.stream().forEach(method -> {
+            final LoxFunction function = new LoxFunction(method,
+                                                         environment,
+                                                         method.name.getLexeme().equals("init"));
+            methods.put(method.name.getLexeme(), function);
+        });
+
+        final LoxClass klass = new LoxClass(stmt.name.getLexeme(), methods);
+        environment.assign(stmt.name, klass);
+        return null;
+    }
+
+    @Override
     public Void visitExpressionStmt(final Stmt.Expression stmt) {
         final Object value = evaluate(stmt.expression);
         if (this.repl) { System.out.println("=> " + stringify(value)); }
@@ -249,7 +297,7 @@ class Interpreter implements Expr.Visitor<Object>, Stmt.Visitor<Void> {
 
     @Override
     public Void visitFunctionStmt(final Stmt.Function stmt) {
-        final LoxFunction function = new LoxFunction(stmt, environment);
+        final LoxFunction function = new LoxFunction(stmt, environment, false);
         environment.define(stmt.name.getLexeme(), function);
         return null;
     }

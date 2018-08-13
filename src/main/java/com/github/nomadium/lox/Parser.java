@@ -11,11 +11,13 @@ import java.util.List;
  *
  * program     -> declaration* EOF ;
  *
- * declaration -> funDecl
+ * declaration -> classDecl
+ *                | funDecl
  *                | varDecl
  *                | statement ;
  *
- * funDecl     -> "func" function;
+ * classDecl   -> "class" IDENTIFIER "{" function* "}" ;
+ * funDecl     -> "func" function ;
  * function    -> IDENTIFIER "(" parameters? ")" block ;
  * parameters  -> IDENTIFIER ( "," IDENTIFIER )* ;
  *
@@ -48,7 +50,7 @@ import java.util.List;
  *
  * expression     -> assignment ;
  *
- * assignment     -> identifier "=" assignment | logic_or ;
+ * assignment     -> ( call "." )? IDENTIFIER "=" assignment | logic_or ;
  *
  * logic_or       -> logic_and ( "or" logic_and)* ;
  *
@@ -64,7 +66,7 @@ import java.util.List;
  *
  * unary          -> ( "!" | "-" ) unary | call ;
  *
- * call           -> primary ( "(" arguments? ")" )* ;
+ * call           -> primary ( "(" arguments? ")" | "." IDENTIFIER )* ;
  *
  * arguments      -> expression ( "," expression )* ;
  *
@@ -82,11 +84,18 @@ class Parser {
     private static final String CANNOT_HAVE_MORE_THAN_MAX_ARGS_SIZE_PARAMETERS
         = "Cannot have more than " + MAX_ARGS_SIZE + " parameters.";
 
+    private static final String EXPECT_CLASS_NAME = "Expect class name.";
+
     private static final String EXPECT_EXPRESSION = "Expect expression.";
+
+    private static final String EXPECT_LEFT_BRACE_BEFORE_CLASS_BODY
+        = "Expect '{' before class body.";
 
     private static final String EXPECT_LEFT_PAREN_AFTER_FOR = "Expect '(' after 'for'.";
 
     private static final String EXPECT_PARAMETER_NAME = "Expect parameter name.";
+
+    private static final String EXPECT_PROPERTY_AFTER_DOT = "Expect property name after '.'.";
 
     private static final String EXPECT_RIGHT_PAREN_AFTER_FOR_CLAUSES
         = "Expect ')' after for clauses.";
@@ -94,6 +103,9 @@ class Parser {
     private static final String EXPECT_LEFT_PAREN_AFTER_IF = "Expect '(' after 'if'.";
 
     private static final String EXPECT_LEFT_PAREN_AFTER_WHILE = "Expect '(' after 'while'.";
+
+    private static final String EXPECT_RIGHT_BRACE_AFTER_CLASS_BODY
+      = "Expect '}' after class body.";
 
     private static final String EXPECT_RIGHT_PAREN_AFTER_IF_CONDITION
         = "Expect ')' after if condition.";
@@ -149,6 +161,7 @@ class Parser {
 
     private Stmt declaration() {
         try {
+            if (match(CLASS)) { return classDeclaration(); }
             if (match(FUN)) { return function("function"); }
             if (match(VAR)) { return varDeclaration(); }
             return statement();
@@ -156,6 +169,20 @@ class Parser {
             synchronize();
             return null;
         }
+    }
+
+    private Stmt classDeclaration() {
+        final Token name = consume(IDENTIFIER, EXPECT_CLASS_NAME);
+        consume(LEFT_BRACE, EXPECT_LEFT_BRACE_BEFORE_CLASS_BODY);
+
+        final List<Stmt.Function> methods = new ArrayList<>();
+        while (!check(RIGHT_BRACE) && !isAtEnd()) {
+            methods.add(function("method"));
+        }
+
+        consume(RIGHT_BRACE, EXPECT_RIGHT_BRACE_AFTER_CLASS_BODY);
+
+        return new Stmt.Class(name, methods);
     }
 
     private Stmt statement() {
@@ -308,6 +335,9 @@ class Parser {
             if (expr instanceof Expr.Variable) {
                 final Token name = ((Expr.Variable)expr).name;
                 return new Expr.Assign(name, value);
+            } else if (expr instanceof Expr.Get) {
+                final Expr.Get get = (Expr.Get)expr;
+                return new Expr.Set(get.object, get.name, value);
             }
 
             error(equals, INVALID_ASSIGNMENT_TARGET);
@@ -400,6 +430,9 @@ class Parser {
         while (true) {
             if (match(LEFT_PAREN)) {
                 expr = finishCall(expr);
+            } else if (match(DOT)) {
+                final Token name = consume(IDENTIFIER, EXPECT_PROPERTY_AFTER_DOT);
+                expr = new Expr.Get(expr, name);
             } else {
                 break;
             }
@@ -433,6 +466,8 @@ class Parser {
         if (match(NUMBER, STRING)) {
             return new Expr.Literal(previous().getLiteral());
         }
+
+        if (match(THIS)) { return new Expr.This(previous()); }
 
         if (match(IDENTIFIER)) {
             return new Expr.Variable(previous());

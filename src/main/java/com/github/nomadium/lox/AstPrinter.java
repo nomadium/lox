@@ -15,6 +15,10 @@ class AstPrinter implements Expr.Visitor<String>, Stmt.Visitor<String> {
         return expr.accept(this);
     }
 
+    String print(final Stmt stmt) {
+        return stmt.accept(this);
+    }
+
     @Override
     public String visitBinaryExpr(final Expr.Binary expr) {
         return parenthesize(expr.operator.getLexeme(), expr.left, expr.right);
@@ -42,6 +46,21 @@ class AstPrinter implements Expr.Visitor<String>, Stmt.Visitor<String> {
     }
 
     @Override
+    public String visitGetExpr(final Expr.Get expr) {
+        return parenthesize2(".", expr.object, expr.name.getLexeme());
+    }
+
+    @Override
+    public String visitSetExpr(final Expr.Set expr) {
+        return parenthesize2("=", expr.object, expr.name.getLexeme(), expr.value);
+    }
+
+    @Override
+    public String visitThisExpr(final Expr.This expr) {
+        return "this";
+    }
+
+    @Override
     public String visitUnaryExpr(final Expr.Unary expr) {
         return parenthesize(expr.operator.getLexeme(), expr.right);
     }
@@ -65,6 +84,22 @@ class AstPrinter implements Expr.Visitor<String>, Stmt.Visitor<String> {
 
         stmt.statements.stream()
                        .forEach(statement -> builder.append(statement.accept(this)));
+
+        builder.append(RIGHT_PAREN);
+
+        return builder.toString();
+    }
+
+    @Override
+    public String visitClassStmt(final Stmt.Class stmt) {
+        final StringBuilder builder = new StringBuilder();
+
+        builder.append(LEFT_PAREN)
+               .append("class ")
+               .append(stmt.name.getLexeme());
+
+        stmt.methods.stream()
+                    .forEach(method -> builder.append(" " + print(method)));
 
         builder.append(RIGHT_PAREN);
 
